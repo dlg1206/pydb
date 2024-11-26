@@ -1,0 +1,18 @@
+[project]
+name = "pydb"
+version = "0.0.1"
+authors = [
+    {name = "Derek Garcia"},
+]
+description = "Util wrapper for writing custom python database interfaces"
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.7"
+dependencies = [
+    "colorama==0.4.6",
+    "tqdm==4.67.1"
+]
+
+[project.urls]
+Homepage = "https://github.com/dlg1206/pydb"
+Source = "https://github.com/dlg1206/pydb.git"
