@@ -1,6 +1,6 @@
 [project]
 name = "pydb"
-version = "0.0.1"
+version = "0.1.0"
 authors = [
     {name = "Derek Garcia"},
 ]
@@ -9,6 +9,8 @@ readme = "readme.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.7"
 dependencies = [
+    "python-dotenv==1.2.1",
+    "mysql-connector-python==9.5.0"
 ]
 
 [project.urls]
