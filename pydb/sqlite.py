@@ -1,9 +1,3 @@
-"""
-File: sqlite_database.py
-Description: Sqlite database interface for handling CRUD methods data
-
-@author Derek Garcia
-"""
 import logging
 import os
 from contextlib import contextmanager
@@ -12,6 +6,13 @@ from sqlite3 import Connection, Cursor, connect, OperationalError, IntegrityErro
 from typing import List, Tuple
 
 from common.entity import Table
+
+"""
+File: sqlite.py
+Description: Sqlite database interface for handling CRUD methods data
+
+@author Derek Garcia
+"""
 
 
 class SQLiteDatabase:
