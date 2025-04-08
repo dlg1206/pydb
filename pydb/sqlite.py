@@ -1,23 +1,18 @@
-"""
-File: sqlite_database.py
-Description: Sqlite database interface for handling CRUD methods data
-
-@author Derek Garcia
-"""
+import logging
 import os
 from contextlib import contextmanager
-from enum import Enum
 from pathlib import Path
 from sqlite3 import Connection, Cursor, connect, OperationalError, IntegrityError
 from typing import List, Tuple
 
-from log.logger import logger
+from common.entity import Table
 
+"""
+File: sqlite.py
+Description: Sqlite database interface for handling CRUD methods data
 
-class Table(Enum):
-    """
-    Generic table to be expanded on by implementations
-    """
+@author Derek Garcia
+"""
 
 
 class SQLiteDatabase:
@@ -25,25 +20,22 @@ class SQLiteDatabase:
     Generic interface for accessing a SQLite Database
     """
 
-    def __init__(self, db_location: str, ddl_location: str = None, force_rebuild: bool = False,
-                 handle_errors: bool = True):
+    def __init__(self, db_location: str, ddl_location: str = None, force_rebuild: bool = False):
         """
         Open interface to SQL db. If it doesn't exist, create new database
 
         :param db_location: Location of the sqlite database
         :param ddl_location: Path to DDL to construct the database
         :param force_rebuild: Force rebuild the DB (default: false)
-        :param handle_errors: Handle non-fatal errors, if false will re-throw errors (default: true)
         """
         self._db_location = db_location if db_location.endswith('.db') else f"{db_location}.db"  # ensure '.db' file ext
-        self._handle_errors = handle_errors
 
         # If db exists, don't rebuild
         if os.path.exists(self._db_location) and not force_rebuild:
-            logger.info(f"Using database at {self._db_location}")
+            logging.debug(f"Using database at {self._db_location}")
             return
         if force_rebuild:
-            logger.warn("Force rebuilding the database")
+            logging.warning("Force rebuilding the database")
 
         # building new or force rebuilding if here
 
@@ -55,11 +47,11 @@ class SQLiteDatabase:
 
         # delete old iff exists
         if os.path.exists(self._db_location):
-            logger.debug_msg(f"Deleting {self._db_location}")
+            logging.debug(f"Deleting {self._db_location}")
             os.remove(self._db_location)
 
         # build db
-        logger.info(f"Creating database at '{self._db_location}'")
+        logging.debug(f"Creating database at '{self._db_location}'")
         db_dir = os.path.dirname(self._db_location)
         Path(db_dir).mkdir(parents=True, exist_ok=True)
         sql_files = []
@@ -71,18 +63,18 @@ class SQLiteDatabase:
                     continue
                 sql_files.append(os.path.join(root, file))
 
-        with self._open_connection() as conn:
-            with self._get_cursor(conn) as cur:
-                for sql_file in logger.get_data_queue(sql_files, 'Creating Database', 'table'):
+        with self.connection() as conn:
+            with self.cursor(conn) as cur:
+                for sql_file in sql_files:
                     # Execute sql file
                     with open(sql_file, 'r') as file:
-                        logger.debug_msg(f"Loading {sql_file}")
+                        logging.debug(f"Loading {sql_file}")
                         cur.executescript(file.read())
 
-        logger.info(f"Created database at {self._db_location}")
+        logging.debug(f"Created database at {self._db_location}")
 
     @contextmanager
-    def _open_connection(self) -> Connection:
+    def connection(self) -> Connection:
         """
         Open a connection that can be closed on exit
 
@@ -93,14 +85,14 @@ class SQLiteDatabase:
             conn = connect(self._db_location)
             yield conn
         except OperationalError as oe:
-            logger.fatal(oe)
+            logging.critical(oe)
         finally:
             if conn:
                 conn.rollback()  # clear any uncommitted transactions
                 conn.close()
 
     @contextmanager
-    def _get_cursor(self, connection: Connection) -> Cursor:
+    def cursor(self, connection: Connection) -> Cursor:
         """
         Open a cursor that can be closed on exit
 
@@ -113,12 +105,12 @@ class SQLiteDatabase:
             cur.execute('PRAGMA foreign_keys = ON;')  # enforce foreign keys
             yield cur
         except OperationalError as oe:
-            logger.fatal(oe)
+            logging.critical(oe)
         finally:
             if cur:
                 cur.close()
 
-    def _insert(self, table: Table, inserts: List[Tuple[str, str | int]], on_success_msg: str = None) -> None:
+    def insert(self, table: Table, inserts: List[Tuple[str, str | int]], on_success_msg: str = None) -> None:
         """
         Generic insert into the database
 
@@ -126,8 +118,8 @@ class SQLiteDatabase:
         :param inserts: Values to insert (column, value)
         :param on_success_msg: Optional debug message to print on success (default: nothing)
         """
-        with self._open_connection() as conn:
-            with self._get_cursor(conn) as cur:
+        with self.connection() as conn:
+            with self.cursor(conn) as cur:
                 columns, values = zip(*[(e[0], e[1]) for e in inserts])  # unpack inserts
                 columns = list(columns)
                 values = list(values)
@@ -142,20 +134,18 @@ class SQLiteDatabase:
                     conn.commit()
                 except IntegrityError as ie:
                     # duplicate entry
-                    if not self._handle_errors:
-                        raise ie
-                    logger.debug_msg(f"{ie.sqlite_errorname} | {table.value} | ({values})")
+                    logging.debug(f"{ie.sqlite_errorname} | {table.value} | ({values})")
+                    raise ie
                 except OperationalError as oe:
                     # failed to insert
-                    if not self._handle_errors:
-                        raise oe
-                    logger.error_exp(oe)
+                    logging.error(oe)
+                    raise oe
                 # print success message if given one
                 if on_success_msg:
-                    logger.debug_msg(on_success_msg)
+                    logging.debug(on_success_msg)
 
-    def _select(self, table: Table, columns: List[str] = None,
-                where_equals: List[Tuple[str, str | int]] = None) \
+    def select(self, table: Table, columns: List[str] = None,
+               where_equals: List[Tuple[str, str | int]] = None) \
             -> List[Tuple[str | int]]:
         """
         Generic select from the database
@@ -164,8 +154,8 @@ class SQLiteDatabase:
         :param columns: optional column names to insert into (default: *)
         :param where_equals: optional where equals clause (column, value)
         """
-        with self._open_connection() as conn:
-            with self._get_cursor(conn) as cur:
+        with self.connection() as conn:
+            with self.cursor(conn) as cur:
                 # build SQL
                 columns_names = f"({', '.join(columns)})" if columns else '*'  # ( c1, ..., cN )
                 sql = f"SELECT {columns_names} FROM {table.value}"
@@ -178,8 +168,8 @@ class SQLiteDatabase:
                 cur.execute(f"{sql};", [] if not where_equals else [clause[1] for clause in where_equals])
                 return cur.fetchall()
 
-    def _update(self, table: Table, updates: List[Tuple[str, str | int]],
-                where_equals: List[Tuple[str, str | int]] = None, on_success: str = None, amend: bool = False) -> bool:
+    def update(self, table: Table, updates: List[Tuple[str, str | int]],
+               where_equals: List[Tuple[str, str | int]] = None, on_success: str = None, amend: bool = False) -> bool:
         """
         Generic update from the database
 
@@ -190,8 +180,8 @@ class SQLiteDatabase:
         :param amend: Amend to row instead of replacing (default: False)
         :return: True if update, false otherwise
         """
-        with self._open_connection() as conn:
-            with self._get_cursor(conn) as cur:
+        with self.connection() as conn:
+            with self.cursor(conn) as cur:
                 # build SQL
                 if amend:
                     set_clause = ', '.join(f"{col} = {col} || (?)" for col, _ in updates)
@@ -213,17 +203,15 @@ class SQLiteDatabase:
                     conn.commit()
                 except OperationalError as oe:
                     # failed to update
-                    if not self._handle_errors:
-                        raise oe
-                    logger.error_exp(oe)
-                    return False
+                    logging.error(oe)
+                    raise oe
                 # print success message if given one
                 if cur.rowcount > 0 and on_success:
-                    logger.debug_msg(on_success)
+                    logging.debug(on_success)
                 return cur.rowcount > 0  # rows changed
 
-    def _upsert(self, table: Table, primary_key: Tuple[str, str], updates: List[Tuple[str, str]],
-                print_on_success: bool = True) -> None:
+    def upsert(self, table: Table, primary_key: Tuple[str, str], updates: List[Tuple[str, str]],
+               print_on_success: bool = True) -> None:
         """
         Generic upsert to the database
 
@@ -233,11 +221,11 @@ class SQLiteDatabase:
         :param print_on_success: Print debug message on success (default: True)
         """
         # attempt to update
-        if not self._update(table, updates,
-                            where_equals=[primary_key],
-                            on_success=f"Updated {primary_key[0]} '{primary_key[1]}'" if print_on_success else None,
-                            amend=True):
+        if not self.update(table, updates,
+                           where_equals=[primary_key],
+                           on_success=f"Updated {primary_key[0]} '{primary_key[1]}'" if print_on_success else None,
+                           amend=True):
             # if fail, insert
             updates.append(primary_key)
-            self._insert(table, updates,
-                         on_success_msg=f"Inserted {primary_key[0]} '{primary_key[1]}'" if print_on_success else None)
+            self.insert(table, updates,
+                        on_success_msg=f"Inserted {primary_key[0]} '{primary_key[1]}'" if print_on_success else None)

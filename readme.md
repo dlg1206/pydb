@@ -18,7 +18,8 @@ pip install pydb
 Make sure to have a directory with all DDL `.sql` files need to create the database if making a new instance
 
 ```python
-from pydb.sqlite.sqlite_database import Table, SQLiteDatabase
+from pydb.common.entity import Table
+from pydb.sqlite import SQLiteDatabase
 
 
 # Create table enums matching your ddl
@@ -29,22 +30,26 @@ class MyTable(Table):
     TABLE_N = "table_n_name"
 
 
+# Use generic interface
+my_database = SQLiteDatabase("path/to/ddl")
+apricons = my_database.select(MyTable.TABLE_N)  # SELECT * FROM table_n_name
+
+
 # Create your custom interface here
 class MySQLDatabase(SQLiteDatabase):
 
     # call super to create instance
-    def __init__(self, db_location: str, ddl_location: str = None, force_rebuild: bool = False,
-                 handle_errors: bool = True):
-        super().__init__(db_location, ddl_location, force_rebuild, handle_errors)
+    def __init__(self, db_location: str, ddl_location: str = None, force_rebuild: bool = False):
+        super().__init__(db_location, ddl_location, force_rebuild)
 
     # example method using prebuilt CRUD
     def count_apricorns(self, color: str) -> int:
-        return len(self._select(MyTable.TABLE_N, where_equals=[('color', color)]))
+        return len(self.select(MyTable.TABLE_N, where_equals=[('color', color)]))
 
     # example method using custom sql
     def remove_all_apricons(self, color: str) -> None:
-        with self._open_connection() as conn:
-            with self._get_cursor(conn) as cur:
+        with self.open_connection() as conn:
+            with self.get_cursor(conn) as cur:
                 cur.execute("DELETE FROM table_n_name WHERE color = ?;", (color,))
                 conn.commit()
 ```
