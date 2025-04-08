@@ -19,7 +19,7 @@ Make sure to have a directory with all DDL `.sql` files need to create the datab
 
 ```python
 from pydb.common.entity import Table
-from pydb.sqlite import SQLiteDatabase
+from pydb.sqlite_db import SQLiteDatabase
 
 
 # Create table enums matching your ddl

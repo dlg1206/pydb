@@ -8,8 +8,8 @@ from typing import List, Tuple
 from common.entity import Table
 
 """
-File: sqlite.py
-Description: Sqlite database interface for handling CRUD methods data
+File: sqlite_db.py
+Description: SQLite database interface for handling CRUD methods data
 
 @author Derek Garcia
 """
