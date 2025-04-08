@@ -1,2 +1,2 @@
 python-dotenv==1.2.1
-mysql-connector-python==9.5.0
+SQLAlchemy==2.0.46
