@@ -7,16 +7,11 @@ Description: Sqlite database interface for handling CRUD methods data
 import logging
 import os
 from contextlib import contextmanager
-from enum import Enum
 from pathlib import Path
 from sqlite3 import Connection, Cursor, connect, OperationalError, IntegrityError
 from typing import List, Tuple
 
-
-class Table(Enum):
-    """
-    Generic table to be expanded on by implementations
-    """
+from common.entity import Table
 
 
 class SQLiteDatabase:
