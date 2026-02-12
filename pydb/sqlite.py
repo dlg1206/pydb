@@ -1,17 +1,18 @@
-import logging
-import os
-from contextlib import contextmanager
-from enum import Enum
-from pathlib import Path
-from sqlite3 import Connection, Cursor, connect, OperationalError, IntegrityError
-from typing import List, Tuple
-
 """
 File: sqlite.py
 Description: Sqlite database interface for handling CRUD methods data
 
 @author Derek Garcia
 """
+
+import logging
+import os
+from contextlib import contextmanager
+from pathlib import Path
+from sqlite3 import Connection, Cursor, connect, OperationalError, IntegrityError
+from typing import List, Tuple
+
+from pydb.common.table import Table
 
 
 class SQLiteDatabase:
