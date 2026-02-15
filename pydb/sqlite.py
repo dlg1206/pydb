@@ -10,7 +10,7 @@ import os
 from contextlib import contextmanager
 from pathlib import Path
 from sqlite3 import Connection, Cursor, connect, OperationalError, IntegrityError
-from typing import List, Tuple
+from typing import List, Tuple, Any, Generator
 
 from pydb.common.table import Table
 
@@ -20,61 +20,66 @@ class SQLiteDatabase:
     Generic interface for accessing a SQLite Database
     """
 
-    def __init__(self, db_location: str, ddl_location: str = None, force_rebuild: bool = False):
+    def __init__(self, db_path: str, ddl_directory: str = None, rebuild: bool = False):
         """
         Open interface to SQL db. If it doesn't exist, create new database
 
-        :param db_location: Location of the sqlite database
-        :param ddl_location: Path to DDL to construct the database
-        :param force_rebuild: Force rebuild the DB (default: false)
+        :param db_path: Path to the sqlite database
+        :param ddl_directory: Path to DDL to construct the database (default: None)
+        :param rebuild: Rebuild the database (default: False)
         """
-        self._db_location = db_location if db_location.endswith('.db') else f"{db_location}.db"  # ensure '.db' file ext
+        self._db_path = db_path if db_path.endswith('.db') else f"{db_path}.db"  # ensure '.db' file ext
 
-        # If db exists, don't rebuild
-        if os.path.exists(self._db_location) and not force_rebuild:
-            logging.debug(f"Using database at {self._db_location}")
+        # If database exists and no rebuild, don't rebuild
+        if os.path.exists(self._db_path) and not rebuild:
+            logging.debug(f"Using database at {self._db_path}")
             return
-        if force_rebuild:
-            logging.warning("Force rebuilding the database")
-
-        # building new or force rebuilding if here
-
-        if not os.path.exists(ddl_location):
-            raise FileNotFoundError(ddl_location)
-
-        if not os.path.isdir(ddl_location):
-            raise ValueError(f"'{ddl_location}' is not a directory")
 
         # delete old iff exists
-        if os.path.exists(self._db_location):
-            logging.debug(f"Deleting {self._db_location}")
-            os.remove(self._db_location)
+        if rebuild and os.path.exists(self._db_path):
+            logging.warning("Force rebuilding the database")
+            logging.debug(f"Deleting database: {self._db_path}")
+            os.remove(self._db_path)
 
-        # build db
-        logging.debug(f"Creating database at '{self._db_location}'")
-        db_dir = os.path.dirname(self._db_location)
+        # Init db
+        logging.debug(f"Creating database at '{self._db_path}'")
+        db_dir = os.path.dirname(self._db_path)
         Path(db_dir).mkdir(parents=True, exist_ok=True)
-        sql_files = []
-        # recursive parse ddl directory
-        for root, dirs, files in os.walk(ddl_location):
-            for file in files:
-                # skip any non sql files
-                if not (file.endswith('.sql')):
-                    continue
-                sql_files.append(os.path.join(root, file))
 
+        # if no ddl to read, return
+        if not ddl_directory:
+            return
         with self.connection() as conn:
-            with self.cursor(conn) as cur:
-                for sql_file in sql_files:
-                    # Execute sql file
-                    with open(sql_file, 'r') as file:
-                        logging.debug(f"Loading {sql_file}")
-                        cur.executescript(file.read())
+            self._init_database(ddl_directory, conn)
 
-        logging.debug(f"Created database at {self._db_location}")
+    def _init_database(self, ddl_directory: str, conn: Connection) -> None:
+        """
+        Init a database from DDL files
+
+        :param ddl_directory: Directory to load DDL from
+        :param conn: Connection to database
+        """
+        # validate ddl directory
+        if not os.path.exists(ddl_directory):
+            raise FileNotFoundError(ddl_directory)
+        if not os.path.isdir(ddl_directory):
+            raise ValueError(f"DDL path is not a directory: {ddl_directory}")
+
+        # recursive parse ddl directory
+        with self.cursor(conn) as cur:
+            for root, dirs, files in os.walk(ddl_directory):
+                for file in files:
+                    # skip any non sql files
+                    if not (file.endswith('.sql')):
+                        continue
+                    # Execute sql file
+                    with open(os.path.join(root, file), 'r') as sql_file:
+                        logging.debug(f"Loading {sql_file}")
+                        cur.executescript(sql_file.read())
+        logging.debug(f"Created database at {self._db_path}")
 
     @contextmanager
-    def connection(self) -> Connection:
+    def connection(self) -> Generator[Connection, Any, None]:
         """
         Open a connection that can be closed on exit
 
@@ -82,7 +87,7 @@ class SQLiteDatabase:
         """
         conn = None
         try:
-            conn = connect(self._db_location)
+            conn = connect(self._db_path)
             yield conn
         except OperationalError as oe:
             logging.critical(oe)
@@ -92,7 +97,7 @@ class SQLiteDatabase:
                 conn.close()
 
     @contextmanager
-    def cursor(self, connection: Connection) -> Cursor:
+    def cursor(self, connection: Connection) -> Generator[Cursor, Any, None]:
         """
         Open a cursor that can be closed on exit
 
