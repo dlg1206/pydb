@@ -107,11 +107,11 @@ class SQLiteDatabase:
                 except IntegrityError as ie:
                     # duplicate entry
                     logging.debug(f"{ie.sqlite_errorname} | {table.value} | ({values})")
-                    raise ie
+                    raise
                 except OperationalError as oe:
                     # failed to insert
                     logging.error(oe)
-                    raise oe
+                    raise
         # print success message if given one
         if on_success_msg:
             logging.debug(on_success_msg)
@@ -192,7 +192,7 @@ class SQLiteDatabase:
                 except OperationalError as oe:
                     # failed to update
                     logging.error(oe)
-                    raise oe
+                    raise
                 rowcount = cur.rowcount
         # print success message if given one
         if rowcount > 0 and on_success:
