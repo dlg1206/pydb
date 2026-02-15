@@ -26,12 +26,12 @@ pydb @ git+https://github.com/dlg1206/pydb.git@sqlite
 Make sure to have a directory with all DDL `.sql` files need to create the database if making a new instance
 
 ```python
-from pydb.common.entity import Table
+from pydb.common.base_table import BaseTable
 from pydb.sqlite import SQLiteDatabase
 
 
 # Create table enums matching your ddl
-class MyTable(Table):
+class MyTable(BaseTable):
     TABLE_A = "table_a_name"
     TABLE_B = "table_b_name"
     ...

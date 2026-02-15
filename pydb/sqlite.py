@@ -10,9 +10,9 @@ import os
 from contextlib import contextmanager
 from pathlib import Path
 from sqlite3 import Connection, Cursor, connect, OperationalError, IntegrityError
-from typing import List, Tuple, Any, Generator
+from typing import List, Tuple, Any, Generator, Dict
 
-from pydb.common.table import Table
+from pydb.common.base_table import BaseTable
 
 
 class SQLiteDatabase:
@@ -78,6 +78,155 @@ class SQLiteDatabase:
                         cur.executescript(sql_file.read())
         logging.debug(f"Created database at {self._db_path}")
 
+    def insert(self,
+               table: BaseTable,
+               inserts: Dict[str, Any],
+               on_success_msg: str = None) -> None:
+        """
+        Generic insert into the database
+
+        :param table: Table to insert into
+        :param inserts: Values to insert (column, value)
+        :param on_success_msg: Optional debug message to print on success (default: nothing)
+        :raises IntegrityError: if insert violates table rules
+        :raises OperationalError: if fail to insert
+        """
+        # build sql
+        columns = list(inserts.keys())
+        values = list(inserts.values())
+        columns_sql = f"({', '.join(columns)})" if columns else ''  # ( c1, ..., cN )
+        params_sql = f"({', '.join('?' for _ in values)})"  # ( ?, ..., N )
+        sql = f"INSERT INTO {table.value} {columns_sql} VALUES {params_sql};"
+
+        with self.connection() as conn:
+            with self.cursor(conn) as cur:
+                # execute
+                try:
+                    cur.execute(sql, values)
+                    conn.commit()
+                except IntegrityError as ie:
+                    # duplicate entry
+                    logging.debug(f"{ie.sqlite_errorname} | {table.value} | ({values})")
+                    raise ie
+                except OperationalError as oe:
+                    # failed to insert
+                    logging.error(oe)
+                    raise oe
+        # print success message if given one
+        if on_success_msg:
+            logging.debug(on_success_msg)
+
+    def select(self,
+               table: BaseTable,
+               columns: List[str] = None,
+               where_equals: Dict[str, Any] = None,
+               fetch_all: bool = True) -> List[Tuple[Any]]:
+        """
+        Generic select from the database
+
+        :param table: Table to select from
+        :param columns: optional column names to insert into (default: *)
+        :param where_equals: optional where equals clause (column, value)
+        :param fetch_all:
+            Fetch all rows, fetch one if false.
+            Useful if checking to table contains value (Default: True)
+        """
+
+        # build SQL
+        columns_names = f"{', '.join(columns)}" if columns else '*'  # ( c1, ..., cN )
+        sql = f"SELECT {columns_names} FROM {table.value}"
+
+        # add where clauses if given
+        params = []
+        if where_equals:
+            where_clause, params = _build_where_clause(where_equals)
+            sql += where_clause
+
+        with self.connection() as conn:
+            with self.cursor(conn) as cur:
+                # execute with where params if present
+                cur.execute(sql, params)
+                return cur.fetchall() if fetch_all else cur.fetchone()
+
+    def update(self,
+               table: BaseTable,
+               updates: Dict[str, Any],
+               where_equals: Dict[str, Any] = None,
+               on_success: str = None,
+               amend: bool = False) -> int:
+        """
+        Generic update from the database
+
+        :param table: Table to select from
+        :param updates: list of updates to the table (column, value)
+        :param where_equals: optional where equals clause (column, value)
+        :param on_success: Optional debug message to print on success (default: nothing)
+        :param amend: Amend to row instead of replacing (default: False)
+        :raises OperationalError: if fail to update row
+        :return: True if update, false otherwise
+        """
+        # reject if no updates
+        if not updates:
+            return 0
+
+        # Build SET clause
+        if amend:
+            set_clause = ', '.join(f"{col} = {col} || ?" for col in updates)
+        else:
+            set_clause = ', '.join(f"{col} = ?" for col in updates)
+        sql = f"UPDATE {table.value} SET {set_clause}"
+        params = list(updates.values())
+
+        # Add WHERE clause
+        if where_equals:
+            where_clause, where_params = _build_where_clause(where_equals)
+            sql += where_clause
+            params.extend(where_params)
+
+        with self.connection() as conn:
+            with self.cursor(conn) as cur:
+                try:
+                    # execute
+                    cur.execute(sql, params)
+                    conn.commit()
+                except OperationalError as oe:
+                    # failed to update
+                    logging.error(oe)
+                    raise oe
+                rowcount = cur.rowcount
+        # print success message if given one
+        if rowcount > 0 and on_success:
+            logging.debug(on_success)
+        return rowcount  # rows changed
+
+    def upsert(self,
+               table: BaseTable,
+               primary_keys: Dict[str, Any],
+               updates: Dict[str, Any],
+               print_on_success: bool = True) -> None:
+        """
+        Generic upsert to the database
+
+        :param table: Table to select from
+        :param primary_keys: Primary key(s) to update (column, value)
+        :param updates: list of updates to the table (column, value)
+        :param print_on_success: Print debug message on success (default: True)
+        """
+        # attempt to update
+        msg = None
+        if print_on_success:
+            msg = ", ".join([f"{k} '{v}'" for k, v in primary_keys.items()])
+
+        updated = self.update(table, updates,
+                              where_equals=primary_keys,
+                              on_success=f"Updated {msg}" if print_on_success else None,
+                              amend=False)
+
+        if not updated:
+            # if fail, insert
+            updates.update(primary_keys)
+            self.insert(table, updates, on_success_msg=f"Inserted {msg}" if print_on_success else None)
+
     @contextmanager
     def connection(self) -> Generator[Connection, Any, None]:
         """
@@ -115,122 +264,20 @@ class SQLiteDatabase:
             if cur:
                 cur.close()
 
-    def insert(self, table: Table, inserts: List[Tuple[str, str | int]], on_success_msg: str = None) -> None:
-        """
-        Generic insert into the database
 
-        :param table: Table to insert into
-        :param inserts: Values to insert (column, value)
-        :param on_success_msg: Optional debug message to print on success (default: nothing)
-        """
-        with self.connection() as conn:
-            with self.cursor(conn) as cur:
-                columns, values = zip(*[(e[0], e[1]) for e in inserts])  # unpack inserts
-                columns = list(columns)
-                values = list(values)
-                # build SQL
-                columns_names = f"({', '.join(columns)})" if columns else ''  # ( c1, ..., cN )
-                params = f"({', '.join('?' for _ in values)})"  # ( ?, ..., N )
-                sql = f"INSERT INTO {table.value} {columns_names} VALUES {params};"
+def _build_where_clause(where_equals: Dict[str, Any]) -> Tuple[str, List[Any]]:
+    """
+    Build a sqlite SQL where clause
 
-                # execute
-                try:
-                    cur.execute(sql, values)
-                    conn.commit()
-                except IntegrityError as ie:
-                    # duplicate entry
-                    logging.debug(f"{ie.sqlite_errorname} | {table.value} | ({values})")
-                    raise ie
-                except OperationalError as oe:
-                    # failed to insert
-                    logging.error(oe)
-                    raise oe
-                # print success message if given one
-                if on_success_msg:
-                    logging.debug(on_success_msg)
-
-    def select(self, table: Table, columns: List[str] = None,
-               where_equals: List[Tuple[str, str | int]] = None) \
-            -> List[Tuple[str | int]]:
-        """
-        Generic select from the database
-
-        :param table: Table to select from
-        :param columns: optional column names to insert into (default: *)
-        :param where_equals: optional where equals clause (column, value)
-        """
-        with self.connection() as conn:
-            with self.cursor(conn) as cur:
-                # build SQL
-                columns_names = f"{', '.join(columns)}" if columns else '*'  # ( c1, ..., cN )
-                sql = f"SELECT {columns_names} FROM {table.value}"
-                # add where clauses if given
-                if where_equals:
-                    sql += ' WHERE ' + ' AND '.join(
-                        [f"{clause[0]} = ?" for clause in where_equals])  # append all where's
-
-                # execute with where params if present
-                cur.execute(f"{sql};", [] if not where_equals else [clause[1] for clause in where_equals])
-                return cur.fetchall()
-
-    def update(self, table: Table, updates: List[Tuple[str, str | int]],
-               where_equals: List[Tuple[str, str | int]] = None, on_success: str = None, amend: bool = False) -> bool:
-        """
-        Generic update from the database
-
-        :param table: Table to select from
-        :param updates: list of updates to the table (column, value)
-        :param where_equals: optional where equals clause (column, value)
-        :param on_success: Optional debug message to print on success (default: nothing)
-        :param amend: Amend to row instead of replacing (default: False)
-        :return: True if update, false otherwise
-        """
-        with self.connection() as conn:
-            with self.cursor(conn) as cur:
-                # build SQL
-                if amend:
-                    set_clause = ', '.join(f"{col} = {col} || (?)" for col, _ in updates)
-                else:
-                    set_clause = ', '.join(f"{col} = (?)" for col, _ in updates)
-
-                values = [u[1] for u in updates]
-                sql = f"UPDATE {table.value} SET {set_clause}"
-
-                # add where clauses if given
-                if where_equals:
-                    sql += ' WHERE ' + ' AND '.join(
-                        [f"{clause[0]} = ?" for clause in where_equals])  # append all where's
-                    [values.append(clause[1]) for clause in where_equals]
-                # execute
-                try:
-                    # execute with where params if present
-                    cur.execute(f"{sql};", values)
-                    conn.commit()
-                except OperationalError as oe:
-                    # failed to update
-                    logging.error(oe)
-                    raise oe
-                # print success message if given one
-                if cur.rowcount > 0 and on_success:
-                    logging.debug(on_success)
-                return cur.rowcount > 0  # rows changed
-
-    def upsert(self, table: Table, primary_key: Tuple[str, str], updates: List[Tuple[str, str]],
-               print_on_success: bool = True) -> None:
-        """
-        Generic upsert to the database
-
-        :param table: Table to select from
-        :param primary_key: Primary key to update (column, value)
-        :param updates: list of updates to the table (column, value)
-        :param print_on_success: Print debug message on success (default: True)
-        """
-        # attempt to update
-        if not self.update(table, updates,
-                           where_equals=[primary_key],
-                           on_success=f"Updated {primary_key[0]} '{primary_key[1]}'" if print_on_success else None,
-                           amend=True):
-            # if fail, insert
-            updates.append(primary_key)
-            self.insert(table, updates,
-                        on_success_msg=f"Inserted {primary_key[0]} '{primary_key[1]}'" if print_on_success else None)
+    :param where_equals: Where equals clause (column, value)
+    :return: Where equals clause string, list of params
+    """
+    params = []
+    clauses = []
+    for column, value in where_equals.items():
+        if value is None:
+            clauses.append(f"{column} IS NULL")
+        else:
+            clauses.append(f"{column} = ?")
+            params.append(value)
+    return " WHERE " + " AND ".join(clauses), params
