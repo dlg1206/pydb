@@ -1,5 +1,5 @@
 """
-File: table.py
+File: base_table.py
 Description: Generic table to be expanded on by implementations
 
 @author Derek Garcia
@@ -7,7 +7,7 @@ Description: Generic table to be expanded on by implementations
 from enum import Enum
 
 
-class Table(Enum):
+class BaseTable(Enum):
     """
     Generic table to be expanded on by implementations
     """
