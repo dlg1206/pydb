@@ -81,12 +81,14 @@ class SQLiteDatabase:
     def insert(self,
                table: BaseTable,
                inserts: Dict[str, Any],
+               or_ignore: bool = False,
                on_success_msg: str = None) -> None:
         """
         Generic insert into the database
 
         :param table: Table to insert into
         :param inserts: Values to insert (column, value)
+        :param or_ignore: Insert or ignore sql (Default: False)
         :param on_success_msg: Optional debug message to print on success (default: nothing)
         :raises IntegrityError: if insert violates table rules
         :raises OperationalError: if fail to insert
@@ -96,7 +98,7 @@ class SQLiteDatabase:
         values = list(inserts.values())
         columns_sql = f"({', '.join(columns)})" if columns else ''  # ( c1, ..., cN )
         params_sql = f"({', '.join('?' for _ in values)})"  # ( ?, ..., N )
-        sql = f"INSERT INTO {table.value} {columns_sql} VALUES {params_sql};"
+        sql = f"INSERT {'OR IGNORE' if or_ignore else ''} INTO {table.value} {columns_sql} VALUES {params_sql};"
 
         with self.connection() as conn:
             with self.cursor(conn) as cur:
