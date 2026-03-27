@@ -82,7 +82,7 @@ class SQLiteDatabase:
                table: BaseTable,
                inserts: Dict[str, Any],
                or_ignore: bool = False,
-               on_success_msg: str = None) -> None:
+               on_success_msg: str = None) -> int | None:
         """
         Generic insert into the database
 
@@ -92,6 +92,7 @@ class SQLiteDatabase:
         :param on_success_msg: Optional debug message to print on success (default: nothing)
         :raises IntegrityError: if insert violates table rules
         :raises OperationalError: if fail to insert
+        :returns Primary Key ID if using AUTOINCREMENT, else None
         """
         # build sql
         columns = list(inserts.keys())
@@ -99,13 +100,14 @@ class SQLiteDatabase:
         columns_sql = f"({', '.join(columns)})" if columns else ''  # ( c1, ..., cN )
         params_sql = f"({', '.join('?' for _ in values)})"  # ( ?, ..., N )
         sql = f"INSERT {'OR IGNORE' if or_ignore else ''} INTO {table.value} {columns_sql} VALUES {params_sql};"
-
+        primary_key = None
         with self.connection() as conn:
             with self.cursor(conn) as cur:
                 # execute
                 try:
                     cur.execute(sql, values)
                     conn.commit()
+                    primary_key = cur.lastrowid
                 except IntegrityError as ie:
                     # duplicate entry
                     logging.debug(f"{ie.sqlite_errorname} | {table.value} | ({values})")
@@ -117,6 +119,8 @@ class SQLiteDatabase:
         # print success message if given one
         if on_success_msg:
             logging.debug(on_success_msg)
+
+        return primary_key
 
     def select(self,
                table: BaseTable,
@@ -205,7 +209,7 @@ class SQLiteDatabase:
                table: BaseTable,
                primary_keys: Dict[str, Any],
                updates: Dict[str, Any],
-               print_on_success: bool = True) -> None:
+               print_on_success: bool = True) -> int | None:
         """
         Generic upsert to the database
 
@@ -213,6 +217,7 @@ class SQLiteDatabase:
         :param primary_keys: Primary key(s) to update (column, value)
         :param updates: list of updates to the table (column, value)
         :param print_on_success: Print debug message on success (default: True)
+        :returns Primary Key ID if insert and using AUTOINCREMENT, else None
         """
         # attempt to update
         msg = None
@@ -224,10 +229,11 @@ class SQLiteDatabase:
                               on_success=f"Updated {msg}" if print_on_success else None,
                               amend=False)
 
-        if not updated:
-            # if fail, insert
-            updates.update(primary_keys)
-            self.insert(table, updates, on_success_msg=f"Inserted {msg}" if print_on_success else None)
+        if updated:
+            return None
+        # if fail, insert
+        updates.update(primary_keys)
+        return self.insert(table, updates, on_success_msg=f"Inserted {msg}" if print_on_success else None)
 
     @contextmanager
     def connection(self) -> Generator[Connection, Any, None]:
