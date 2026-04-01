@@ -11,6 +11,7 @@ jobs:
         python-version: [ "3.12", "3.13" ]
     steps:
       - uses: actions/checkout@v4
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v3
         with:
@@ -19,10 +20,9 @@ jobs:
       - name: Install dependencies and pylint
         run: |
           pip install --upgrade pip
-          pip install --prefer-binary --no-cache -r requirements.txt
-          pip install pylint
+          pip install ".[dev]"
 
       - name: Analyzing the code with pylint
         env:
-          PYTHONPATH: "./snowsearch"
-        run: pylint --fail-under=6.0 snowsearch
+          PYTHONPATH: "./pydb"
+        run: pylint pydb

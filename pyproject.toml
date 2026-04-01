@@ -2,15 +2,79 @@
 name = "pydb"
 version = "0.0.1"
 authors = [
-    {name = "Derek Garcia"},
+    { name = "Derek Garcia" },
 ]
 description = "Util wrapper for writing custom python database interfaces"
 readme = "readme.md"
-license = {file = "LICENSE"}
+license = { file = "LICENSE" }
 requires-python = ">=3.7"
 dependencies = [
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pylint",
+]
+
+[tool.pylint.main]
+fail-under = 6
+py-version = "3.12"
+jobs = 1
+
+[tool.pylint.messages_control]
+confidence = ["HIGH", "CONTROL_FLOW", "INFERENCE", "INFERENCE_FAILURE", "UNDEFINED"]
+disable = [
+    "raw-checker-failed",
+    "bad-inline-option",
+    "locally-disabled",
+    "file-ignored",
+    "suppressed-message",
+    "useless-suppression",
+    "deprecated-pragma",
+    "use-symbolic-message-instead",
+    "too-many-arguments",
+    "broad-exception-caught",
+    "too-many-locals",
+    "too-many-public-methods",
+    "too-few-public-methods",
+    "too-many-positional-arguments",
+    "too-many-instance-attributes",
+    "redefined-builtin",
+]
+
+[tool.pylint.basic]
+good-names = ["i", "j", "k", "ex", "Run", "_"]
+bad-names = ["foo", "bar", "baz", "toto", "tutu", "tata"]
+
+[tool.pylint.format]
+max-line-length = 120
+max-module-lines = 1000
+indent-string = "    "
+
+[tool.pylint.design]
+max-args = 5
+max-attributes = 7
+max-bool-expr = 5
+max-branches = 12
+max-locals = 15
+max-parents = 7
+max-positional-arguments = 5
+max-public-methods = 20
+max-returns = 6
+max-statements = 50
+min-public-methods = 2
+
+[tool.pylint.similarities]
+ignore-comments = true
+ignore-docstrings = true
+ignore-imports = true
+ignore-signatures = true
+min-similarity-lines = 4
+
+[tool.pylint.reports]
+reports = false
+score = true
+
 [project.urls]
 Homepage = "https://github.com/dlg1206/pydb"
-Source = "https://github.com/dlg1206/pydb.git"
+Source = "https://github.com/dlg1206/pydb"
